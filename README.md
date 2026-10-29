@@ -5,6 +5,8 @@ Stars are nodes and the lines drawn between them are edges. Every constellation 
 
 It is a single self-contained HTML file. There is nothing to install and no build step.
 
+**Live site:** https://rwoodrow.github.io/Constellation-Graphs/
+
 ## Features
 
 - **15 constellations** with different graph shapes, so each algorithm meets a different challenge.
@@ -40,19 +42,6 @@ It is a single self-contained HTML file. There is nothing to install and no buil
 | Ursa Minor | A bowl cycle with a handle | A mirror of Ursa Major |
 
 **A note on accuracy:** star positions and magnitudes are simplified for teaching. They are not astronomical data, and in a few constellations the star order and spacing are stylised on purpose (Gemini's perfectly even ladder, for example).
-
-## Running it
-
-Open `index.html` in any modern browser. That is all.
-
-To publish it with GitHub Pages:
-
-1. Push this repository to GitHub.
-2. Go to **Settings → Pages**.
-3. Under **Build and deployment**, choose **Deploy from a branch**, select your main branch and the `/ (root)` folder, then save.
-4. After a minute or so the page is live at `https://<your-username>.github.io/<repository-name>/`.
-
-The page loads its fonts from Google Fonts. If that is blocked (on a school network, say), it falls back to system fonts and works the same.
 
 ## How it works
 
