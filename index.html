@@ -1,0 +1,792 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Constellation Graphs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: option toolbar on top, then a chart column beside a sticky algorithm trace panel; stacks to one column on phones. */
+:root{
+  --bg:#EBEEF4; --surface:#F7F8FB; --ink:#14213D; --muted:#56628A; --rule:#D3D9E6; --edge:#8591B0;
+  --star:#B07A12; --visited:#4152B8; --on-visited:#FFFFFF; --frontier:#C8710F; --current:#C2185B; --path:#0B8A5F;
+  --font-display:'Cormorant Garamond',Georgia,'Times New Roman',serif;
+  --font-body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0A0F1F; --surface:#111834; --ink:#E7ECFB; --muted:#93A0C6; --rule:#222C50; --edge:#56649A;
+    --star:#F2C94C; --visited:#7F8EFF; --on-visited:#0A0F1F; --frontier:#F2994A; --current:#FF6B9A; --path:#3DDC97;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0A0F1F; --surface:#111834; --ink:#E7ECFB; --muted:#93A0C6; --rule:#222C50; --edge:#56649A;
+  --star:#F2C94C; --visited:#7F8EFF; --on-visited:#0A0F1F; --frontier:#F2994A; --current:#FF6B9A; --path:#3DDC97;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg);color:var(--ink);font:15px/1.5 var(--font-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:24px 56px;
+}
+.page{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font:600 clamp(34px,5vw,52px)/1 var(--font-display);margin:0;letter-spacing:.005em;text-wrap:balance}
+h2{font:600 28px/1.1 var(--font-display);margin:0}
+h3{font:600 12px/1.2 var(--font-body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0}
+.lede{margin:10px 0 0;max-width:62ch;color:var(--muted)}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--visited);outline-offset:2px}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:14px 28px;align-items:flex-end;padding-block:14px;border-block:1px solid var(--rule)}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.lbl{font:600 11px/1 var(--font-body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button{background:transparent;border:1px solid var(--edge);border-radius:6px;padding:5px 11px;font-size:14px;line-height:1.3}
+.seg button:hover{border-color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--visited);border-color:var(--visited);color:var(--on-visited);font-weight:500}
+.mini{background:transparent;border:1px solid var(--rule);border-radius:6px;padding:4px 9px;font-size:13px;color:var(--muted)}
+.mini:hover{border-color:var(--edge);color:var(--ink)}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+
+.work{display:grid;gap:20px;grid-template-columns:minmax(0,1fr);grid-template-areas:"chart" "panel" "compare" "key" "data"}
+@media (min-width:1040px){
+  .work{grid-template-columns:minmax(0,1fr) 410px;grid-template-areas:"chart panel" "compare panel" "key panel" "data panel";align-items:start}
+  #panel{position:sticky;top:max(16px,env(safe-area-inset-top,0px));max-height:calc(100vh - 32px);overflow:auto}
+}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:18px;min-width:0}
+#chartCard{grid-area:chart}#panel{grid-area:panel}#compare{grid-area:compare}#keyCard{grid-area:key}#dataCard{grid-area:data}
+
+.chart-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-bottom:6px}
+.alias{font:italic 500 20px/1 var(--font-display);color:var(--muted)}
+.meta{font:400 12.5px/1.4 var(--font-mono);color:var(--muted);margin:0}
+#chart{display:block;width:100%;height:auto;max-height:78vh}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 0;padding:0;list-style:none;font-size:12.5px;color:var(--muted)}
+.legend li{display:flex;align-items:center;gap:7px}
+.sw{width:12px;height:12px;border-radius:50%;display:inline-block;border:3px solid var(--star);background:var(--surface)}
+.sw.cur{border-color:var(--current)}.sw.vis{background:var(--visited);border-color:var(--visited)}.sw.opn{border-color:var(--frontier)}
+.sw.pth{border:0;border-radius:2px;width:18px;height:5px;background:var(--path)}
+.hint{margin:10px 0 0;font-size:13px;color:var(--muted)}
+
+/* chart internals */
+.frame{fill:none;stroke:var(--edge);stroke-width:1.2}
+.grid line{stroke:var(--rule);stroke-width:1;stroke-dasharray:2 5}
+.ticks text{font:400 10.5px var(--font-mono);fill:var(--muted)}
+.bgstars{fill:var(--muted)}
+.edge{color:var(--edge)}
+.edge line{stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.edge polygon{fill:currentColor}
+.edge.tree{color:var(--visited)}.edge.tree line{stroke-width:3}
+.edge.rel{color:var(--frontier)}.edge.rel line{stroke-width:3.5}
+.edge.path{color:var(--path)}.edge.path line{stroke-width:5}
+.hit{stroke:transparent;stroke-width:18;fill:none}
+.directed .hit{cursor:pointer}
+.wt{font:500 12.5px var(--font-mono);fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round;text-anchor:middle;dominant-baseline:central}
+.node{cursor:pointer}
+.node .glow{fill:var(--star);opacity:.15}
+.node .body{fill:var(--surface);stroke:var(--star);stroke-width:2.2;transition:fill .15s,stroke .15s}
+.node .lt{fill:var(--ink);font:600 14px var(--font-mono);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.node.visited .body{fill:var(--visited);stroke:var(--visited)}
+.node.visited .lt{fill:var(--on-visited)}
+.node.open .body{stroke:var(--frontier);stroke-width:4.5}
+.node.cur .body{stroke:var(--current);stroke-width:5}
+.node.onpath .body{stroke:var(--path);stroke-width:5}
+.node:focus-visible{outline:none}
+.node:focus-visible .glow{opacity:.55}
+.nm{font:500 11.5px var(--font-body);fill:var(--ink);text-anchor:middle;paint-order:stroke;stroke:var(--surface);stroke-width:4px;pointer-events:none}
+.tag{font:600 10px var(--font-mono);letter-spacing:.1em;fill:var(--ink);text-anchor:middle;paint-order:stroke;stroke:var(--surface);stroke-width:4px;pointer-events:none}
+
+/* panel */
+#panel{display:flex;flex-direction:column;gap:14px}
+#panel>*{flex-shrink:0}
+.blurb{margin:0;font-size:13.5px;color:var(--muted)}
+.selrow{display:flex;flex-wrap:wrap;gap:10px}
+select{background:var(--surface);border:1px solid var(--edge);border-radius:6px;padding:5px 8px;font-size:14px;max-width:100%}
+.transport{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.transport button{background:transparent;border:1px solid var(--edge);border-radius:6px;padding:5px 12px;font-size:14px}
+.transport button:hover{border-color:var(--ink)}
+.transport button.go{background:var(--visited);border-color:var(--visited);color:var(--on-visited);font-weight:500;min-width:76px}
+.transport button:disabled{opacity:.4;cursor:default}
+#scrub{width:100%;accent-color:var(--visited)}
+.stepno{font:500 12.5px var(--font-mono);color:var(--muted)}
+.note{border-left:3px solid var(--visited);padding:2px 0 2px 12px;font-size:14px;min-height:3.2em}
+.note p{margin:0 0 3px}
+.note p:last-child{margin:0}
+.struct{display:flex;flex-direction:column;gap:6px}
+.struct h3 small{font-weight:400;letter-spacing:.02em;text-transform:none;font-size:12px;margin-left:6px}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{font:500 12.5px var(--font-mono);border:1px solid var(--edge);border-radius:4px;padding:1px 7px}
+.empty{font:400 12.5px var(--font-mono);color:var(--muted)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font:400 12.5px var(--font-mono);font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:4px 9px;border-bottom:1px solid var(--rule);white-space:nowrap}
+thead th{font:600 11px var(--font-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+tbody th{font-weight:600}
+tr.cur td,tr.cur th{background:color-mix(in srgb,var(--current) 14%,transparent)}
+tr.done td,tr.done th{color:var(--muted)}
+td.ch{color:var(--frontier);font-weight:600}
+.result{border:1px solid var(--path);border-radius:6px;padding:10px 12px;font-size:14px}
+.result b{font-weight:600}
+.warn{font-size:13px;margin:0}
+.warn.bad{color:var(--current)}
+.warn.ok{color:var(--muted)}
+
+/* compare + data */
+.cmp td,.cmp th{white-space:normal}
+.cmp tr.cur td,.cmp tr.cur th{background:color-mix(in srgb,var(--visited) 12%,transparent)}
+.best{font:600 10.5px var(--font-body);letter-spacing:.07em;text-transform:uppercase;color:var(--path);margin-left:6px}
+.sub{margin:4px 0 12px;font-size:13px;color:var(--muted)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+.tabs .grow{flex:1}
+pre{margin:0;font:400 13px/1.55 var(--font-mono);overflow-x:auto;padding:12px;border:1px solid var(--rule);border-radius:6px;background:var(--bg)}
+.mx td,.mx th{text-align:center;padding:4px 10px}
+.mx thead th:first-child{text-align:left}
+.dim{color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.node .body{transition:none}}
+</style>
+
+<div class="page">
+  <header>
+    <h1>Constellation Graphs</h1>
+    <p class="lede">Every constellation is a graph: stars are nodes and the lines drawn between them are edges. Switch between undirected and directed, then trace depth-first search, Dijkstra's algorithm or A* one step at a time.</p>
+  </header>
+
+  <div class="toolbar">
+    <div class="field"><span class="lbl">Constellation</span><div class="seg" id="segSky"></div></div>
+    <div class="field"><span class="lbl">Edges</span>
+      <div class="row">
+        <div class="seg" id="segDir"><button data-v="undirected">Undirected</button><button data-v="directed">Directed</button></div>
+        <button class="mini" id="revAll" hidden>Reverse all</button>
+        <button class="mini" id="resetDirs" hidden>Reset directions</button>
+      </div>
+    </div>
+    <div class="field"><span class="lbl">Weights</span>
+      <div class="row">
+        <div class="seg" id="segW"><button data-v="distance">Distance</button><button data-v="unit">Unweighted</button></div>
+        <button class="mini" id="shuffle">Shuffle weights</button>
+        <button class="mini" id="resetW">Reset</button>
+      </div>
+    </div>
+    <div class="field"><span class="lbl">Labels</span><div class="seg" id="segLab"><button data-v="letters">Letters</button><button data-v="names">Star names</button></div></div>
+    <div class="field"><label class="lbl" for="selStart">Start</label><select id="selStart"></select></div>
+    <div class="field"><label class="lbl" for="selGoal">Goal</label><select id="selGoal"></select></div>
+    <div class="field"><span class="lbl">Chart click sets</span><div class="seg" id="segPick"><button data-v="start">Start</button><button data-v="goal">Goal</button></div></div>
+  </div>
+
+  <main class="work">
+    <section class="card" id="chartCard">
+      <div class="chart-head"><h2 id="skyName"></h2><span class="alias" id="skyAlias"></span></div>
+      <p class="meta" id="skyMeta"></p>
+      <svg id="chart" viewBox="56 14 512 500" role="group" aria-label="Constellation graph"></svg>
+      <ul class="legend">
+        <li><span class="sw cur"></span>Current star</li>
+        <li><span class="sw vis"></span>Visited or settled</li>
+        <li><span class="sw opn"></span>In the stack or queue</li>
+        <li><span class="sw pth"></span>Final route</li>
+      </ul>
+      <p class="hint" id="hint"></p>
+    </section>
+
+    <aside class="card" id="panel" aria-label="Algorithm trace">
+      <div class="field"><span class="lbl">Algorithm</span><div class="seg" id="segAlgo"><button data-v="dfs">DFS</button><button data-v="dijkstra">Dijkstra</button><button data-v="astar">A*</button></div></div>
+      <p class="blurb" id="blurb"></p>
+      <div class="field" id="heurRow"><span class="lbl">Heuristic h(n)</span>
+        <div class="seg" id="segHeur"><button data-v="euclid">Straight line</button><button data-v="manhattan">Manhattan</button><button data-v="zero">None (h = 0)</button></div>
+        <p class="warn" id="admiss"></p>
+      </div>
+      <div class="transport">
+        <button id="bReset">Reset</button><button id="bBack">Back</button><button id="bPlay" class="go">Play</button><button id="bNext">Next</button>
+        <select id="selSpeed" aria-label="Playback speed"><option value="1600">Slow</option><option value="900" selected>Normal</option><option value="450">Fast</option></select>
+      </div>
+      <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Step">
+      <div class="stepno" id="stepNo"></div>
+      <div class="note" id="note" aria-live="polite"></div>
+      <div id="structs" style="display:flex;flex-direction:column;gap:12px"></div>
+      <div class="tablewrap" id="trace"></div>
+      <div id="result"></div>
+    </aside>
+
+    <section class="card" id="compare">
+      <h3>Same graph, three algorithms</h3>
+      <p class="sub" id="cmpSub"></p>
+      <div class="tablewrap" id="cmpOut"></div>
+    </section>
+
+    <section class="card" id="keyCard">
+      <h3>Star key</h3>
+      <p class="sub">Apparent magnitude is approximate; a lower number is a brighter star. Positions are simplified chart coordinates from 0 to 100, which A* uses for straight-line distance.</p>
+      <div class="tablewrap" id="keyOut"></div>
+    </section>
+
+    <section class="card" id="dataCard">
+      <h3>Graph data for this chart</h3>
+      <p class="sub" id="dataSub"></p>
+      <div class="tabs">
+        <div class="seg" id="segData"><button data-v="list">Adjacency list</button><button data-v="matrix">Matrix</button><button data-v="python">Python</button></div>
+        <span class="grow"></span>
+        <button class="mini" id="copyBtn">Copy</button>
+      </div>
+      <div class="tablewrap" id="dataOut" tabindex="0"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function(){
+'use strict';
+var UNIT=5;
+function mk(a){return a.map(function(r){return {id:r[0],name:r[1],m:r[2],x:r[3],y:r[4]};});}
+var SKY={
+  cassiopeia:{name:'Cassiopeia',alias:'The Queen',start:'A',goal:'E',
+    stars:mk([['A','Caph',2.3,10,30],['B','Schedar',2.2,30,62],['C','Navi',2.2,50,36],['D','Ruchbah',2.7,70,64],['E','Segin',3.4,92,26]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E']]},
+  ursa:{name:'Ursa Major',alias:'The Great Bear (Plough, Big Dipper)',start:'A',goal:'F',
+    stars:mk([['A','Alkaid',1.9,8,22],['B','Mizar',2.0,26,34],['C','Alioth',1.8,43,40],['D','Megrez',3.3,60,46],['E','Dubhe',1.8,88,36],['F','Merak',2.4,86,70],['G','Phecda',2.4,60,76]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E'],['E','F'],['F','G'],['G','D']]},
+  orion:{name:'Orion',alias:'The Hunter',start:'A',goal:'H',
+    stars:mk([['A','Meissa',3.4,50,12],['B','Betelgeuse',0.4,30,30],['C','Bellatrix',1.6,70,28],['D','Alnitak',1.8,38,54],['E','Alnilam',1.7,50,50],['F','Mintaka',2.2,62,46],['G','Saiph',2.1,34,84],['H','Rigel',0.1,72,82]]),
+    edges:[['A','B'],['A','C'],['B','D'],['C','F'],['D','E'],['E','F'],['D','G'],['F','H']]},
+  leo:{name:'Leo',alias:'The Lion',start:'A',goal:'H',
+    stars:mk([['A','Regulus',1.4,22,80],['B','Eta Leonis',3.5,28,64],['C','Algieba',2.1,36,50],['D','Adhafera',3.4,38,36],['E','Rasalas',3.9,30,22],['F','Algenubi',3.0,44,12],['G','Zosma',2.6,66,40],['H','Denebola',2.1,92,48],['I','Chertan',3.3,70,66]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E'],['E','F'],['C','G'],['G','H'],['H','I'],['I','G'],['I','A']]},
+  pegasus:{name:'Pegasus',alias:'The Winged Horse, with the Andromeda line',start:'A',goal:'E',
+    stars:mk([['A','Almach',2.2,10,14],['B','Mirach',2.1,22,30],['C','Alpheratz',2.1,36,46],['D','Scheat',2.4,78,44],['E','Markab',2.5,74,82],['F','Algenib',2.8,36,84]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E'],['E','F'],['F','C']]},
+  crux:{name:'Crux',alias:'The Southern Cross. Two lines that never meet',start:'A',goal:'D',
+    stars:mk([['A','Gacrux',1.6,50,10],['B','Acrux',0.8,44,88],['C','Mimosa',1.3,18,48],['D','Imai',2.8,78,40]]),
+    edges:[['A','B'],['C','D']]},
+  cygnus:{name:'Cygnus',alias:'The Swan (Northern Cross)',start:'A',goal:'D',
+    stars:mk([['A','Deneb',1.3,50,10],['B','Sadr',2.2,50,44],['C','Albireo',3.2,50,88],['D','Gienah',2.5,18,56],['E','Fawaris',2.9,82,38]]),
+    edges:[['A','B'],['B','C'],['B','D'],['B','E']]},
+  scorpius:{name:'Scorpius',alias:'The Scorpion',start:'A',goal:'I',
+    stars:mk([['A','Dschubba',2.3,74,8],['B','Antares',1.1,62,30],['C','Epsilon Sco',2.3,46,54],['D','Mu Sco',3.0,34,66],['E','Zeta Sco',3.6,24,80],['F','Sargas',1.9,34,92],['G','Iota Sco',3.0,52,94],['H','Kappa Sco',2.4,66,86],['I','Shaula',1.6,82,70]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E'],['E','F'],['F','G'],['G','H'],['H','I']]},
+  lyra:{name:'Lyra',alias:'The Lyre',start:'A',goal:'D',
+    stars:mk([['A','Vega',0.0,14,14],['B','Zeta Lyrae',4.3,28,40],['C','Delta Lyrae',4.2,50,34],['D','Sulafat',3.3,80,70],['E','Sheliak',3.5,60,76]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E'],['E','B']]},
+  gemini:{name:'Gemini',alias:'The Twins. A ladder with many equal routes',start:'A',goal:'F',
+    stars:mk([['A','Castor',1.6,22,12],['B','Pollux',1.1,52,12],['C','Mebsuta',3.0,22,42],['D','Wasat',3.5,52,42],['E','Tejat',2.9,22,72],['F','Alhena',1.9,52,72]]),
+    edges:[['A','B'],['A','C'],['B','D'],['C','D'],['C','E'],['D','F'],['E','F']]},
+  taurus:{name:'Taurus',alias:'The Bull. A branching tree',start:'D',goal:'B',
+    stars:mk([['A','Elnath',1.7,90,48],['B','Zeta Tauri',3.0,92,86],['C','Aldebaran',0.9,60,68],['D','Gamma Tauri',3.6,22,50],['E','Delta Tauri',3.8,36,34],['F','Epsilon Tauri',3.5,54,22],['G','Theta Tauri',3.4,40,66]]),
+    edges:[['D','E'],['E','F'],['D','G'],['G','C'],['C','A'],['C','B']]},
+  sagittarius:{name:'Sagittarius',alias:'The Archer (the Teapot). Dense, with many cycles',start:'A',goal:'F',
+    stars:mk([['A','Alnasl',3.0,12,60],['B','Kaus Media',2.7,30,44],['C','Kaus Borealis',2.8,46,22],['D','Phi Sgr',3.2,60,40],['E','Nunki',2.0,82,28],['F','Tau Sgr',3.3,86,62],['G','Ascella',2.6,62,76],['H','Kaus Australis',1.8,34,80]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E'],['E','F'],['F','G'],['G','H'],['H','A'],['B','D'],['D','G'],['B','H']]},
+  bootes:{name:'Boötes',alias:'The Herdsman (the Kite)',start:'A',goal:'E',
+    stars:mk([['A','Arcturus',-0.1,16,92],['B','Izar',2.4,44,66],['C','Rho Boötis',3.6,24,40],['D','Seginus',3.0,68,44],['E','Nekkar',3.5,46,12]]),
+    edges:[['A','B'],['B','C'],['C','E'],['E','D'],['D','B']]},
+  draco:{name:'Draco',alias:'The Dragon. A long coil that ends in a straight run',start:'A',goal:'G',
+    stars:mk([['A','Eltanin',2.2,82,8],['B','Rastaban',2.8,60,14],['C','Altais',3.1,74,32],['D','Aldhibah',3.2,60,46],['E','Edasich',3.3,46,60],['F','Thuban',3.7,32,74],['G','Giausar',3.8,18,88]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E'],['E','F'],['F','G']]},
+  ursaminor:{name:'Ursa Minor',alias:'The Little Bear (Little Dipper)',start:'A',goal:'G',
+    stars:mk([['A','Polaris',2.0,8,44],['B','Yildun',4.4,24,32],['C','Epsilon UMi',4.2,38,38],['D','Zeta UMi',4.3,52,48],['E','Eta UMi',5.0,56,76],['F','Pherkad',3.0,84,56],['G','Kochab',2.1,88,84]]),
+    edges:[['A','B'],['B','C'],['C','D'],['D','E'],['E','G'],['G','F'],['F','D']]}
+};
+function components(s){
+  var p={};s.stars.forEach(function(n){p[n.id]=n.id;});
+  function f(x){while(p[x]!==x)x=p[x];return x;}
+  s.edges.forEach(function(e){p[f(e[0])]=f(e[1]);});
+  var seen={},c=0;
+  s.stars.forEach(function(n){var r=f(n.id);if(!seen[r]){seen[r]=1;c++;}});
+  return c;
+}
+var BLURB={
+  dfs:'Goes as deep as it can, then backtracks. Uses a stack. Finds a route, but not always the cheapest one. Neighbours are tried in alphabetical order.',
+  dijkstra:'Always settles the closest unsettled star next, using a priority queue. Finds the cheapest route when no weight is negative.',
+  astar:'Dijkstra with a guess. It picks the star with the lowest f = g + h, where g is the cost so far and h estimates the cost left.'
+};
+var state={sky:'orion',directed:false,weights:'distance',labels:'letters',algo:'dfs',heur:'euclid',start:'A',goal:'H',pick:'start',step:0,playing:false,dataTab:'list',dirs:{},offs:{}};
+var timer=null,G=null,RUN=null;
+
+function $(id){return document.getElementById(id);}
+function r1(n){return Math.round(n*10)/10;}
+function PX(v){return 90+v*4.6;}
+function PY(v){return 40+v*4.6;}
+function R(n){return r1(18-n.m*1.4);}
+function fmtD(x){return x===Infinity?'∞':String(x);}
+
+function initSky(k){
+  var s=SKY[k];
+  if(!state.dirs[k]) state.dirs[k]=s.edges.map(function(){return 0;});
+  if(!state.offs[k]) state.offs[k]=s.edges.map(function(){return 0;});
+  state.sky=k;state.start=s.start;state.goal=s.goal;state.pick='start';state.step=0;
+}
+
+function buildGraph(){
+  var s=SKY[state.sky],dirs=state.dirs[state.sky],offs=state.offs[state.sky];
+  var nodes=s.stars,byId={},maxEdge=0;
+  nodes.forEach(function(n){byId[n.id]=n;});
+  var edges=s.edges.map(function(e,i){
+    var a=byId[e[0]],b=byId[e[1]],d=Math.hypot(a.x-b.x,a.y-b.y);
+    if(d>maxEdge)maxEdge=d;
+    var base=Math.max(1,Math.ceil(d/UNIT-1e-9));
+    return {i:i,a:e[0],b:e[1],d:d,base:base,dir:state.directed?dirs[i]:2,w:state.weights==='unit'?1:base+offs[i]};
+  });
+  var adj={};
+  nodes.forEach(function(n){adj[n.id]=[];});
+  edges.forEach(function(e){
+    if(e.dir===0||e.dir===2) adj[e.a].push({to:e.b,w:e.w,e:e.i});
+    if(e.dir===1||e.dir===2) adj[e.b].push({to:e.a,w:e.w,e:e.i});
+  });
+  Object.keys(adj).forEach(function(k){adj[k].sort(function(p,q){return p.to<q.to?-1:p.to>q.to?1:0;});});
+  return {s:s,nodes:nodes,byId:byId,edges:edges,adj:adj,maxEdge:maxEdge,hScale:state.weights==='unit'?maxEdge:UNIT};
+}
+
+function hFn(g,goal){
+  return function(id){
+    if(!goal||state.heur==='zero') return 0;
+    var a=g.byId[id],b=g.byId[goal],dx=Math.abs(a.x-b.x),dy=Math.abs(a.y-b.y);
+    var raw=state.heur==='manhattan'?dx+dy:Math.hypot(dx,dy);
+    return raw/g.hScale;
+  };
+}
+function admiss(g,goal){
+  var h=hFn(g,goal),td={};
+  g.nodes.forEach(function(n){td[n.id]=Infinity;});
+  td[goal]=0;
+  for(var k=0;k<g.nodes.length;k++){
+    g.nodes.forEach(function(u){g.adj[u.id].forEach(function(n){if(td[n.to]+n.w<td[u.id])td[u.id]=td[n.to]+n.w;});});
+  }
+  var worst=null;
+  g.nodes.forEach(function(n){
+    if(td[n.id]<Infinity){
+      var over=h(n.id)-td[n.id];
+      if(over>1e-9&&(!worst||over>worst.over)) worst={id:n.id,h:h(n.id),t:td[n.id],over:over};
+    }
+  });
+  return {ok:!worst,worst:worst};
+}
+
+function pathFromPrev(prev,start,goal){
+  var ids=[goal],es=[],c=goal;
+  while(c!==start){var p=prev[c];if(!p)return null;es.unshift(p.e);ids.unshift(p.from);c=p.from;}
+  return {ids:ids,es:es};
+}
+function base(o){
+  return Object.assign({lines:[],cur:null,visited:[],open:[],structs:[],prev:{},relaxed:[],changed:[],table:null,done:false,result:null,pathEdges:[]},o);
+}
+
+function runDFS(g,start,goal){
+  var steps=[],visited=[start],stack=[start],ptr={},prev={},ids=g.nodes.map(function(n){return n.id;});
+  function snap(o){
+    var st=stack.slice(),ch=o.changed||[];
+    steps.push(base(Object.assign({
+      visited:visited.slice(),open:st.slice(),prev:Object.assign({},prev),
+      structs:[
+        {title:'Call stack',sub:'top first',items:st.slice().reverse().map(function(id){return {txt:id};})},
+        {title:'Visited order',sub:'',items:visited.map(function(id){return {txt:id};})}
+      ],
+      table:{cols:['Star','Order','From'],rows:ids.map(function(id){
+        var vi=visited.indexOf(id);
+        return {id:id,cells:[vi>=0?vi+1:'–',prev[id]?prev[id].from:'–'],
+          st:id===o.cur?'cur':st.indexOf(id)>=0?'open':vi>=0?'done':'new',ch:ch.indexOf(id)>=0};
+      })}
+    },o)));
+  }
+  function finish(){
+    var ids2=stack.slice(),es=[],cost=0;
+    ids2.slice(1).forEach(function(id){es.push(prev[id].e);cost+=prev[id].w;});
+    return {done:true,pathEdges:es,result:{found:true,ids:ids2,cost:cost,count:visited.length,kind:'path'}};
+  }
+  if(start===goal){
+    snap(Object.assign({cur:start,changed:[start],lines:['Visit '+start+' and push it on the stack. It is the goal, so the search ends at once.']},finish()));
+    return {steps:steps};
+  }
+  snap({cur:start,changed:[start],lines:['Visit '+start+': mark it visited and push it on the stack.']});
+  while(stack.length){
+    var u=stack[stack.length-1],nb=g.adj[u],skipped=[],nxt=null;
+    if(ptr[u]===undefined)ptr[u]=0;
+    while(ptr[u]<nb.length){
+      var n=nb[ptr[u]++];
+      if(visited.indexOf(n.to)>=0)skipped.push(n.to);else{nxt=n;break;}
+    }
+    var sk=skipped.length?skipped.join(', ')+' already visited. ':'';
+    if(nxt){
+      visited.push(nxt.to);stack.push(nxt.to);prev[nxt.to]={from:u,e:nxt.e,w:nxt.w};
+      var lines=['At '+u+': '+sk+'Next unvisited neighbour is '+nxt.to+', so go there and push it.'];
+      var extra={};
+      if(nxt.to===goal){lines.push(goal+' is the goal. The stack holds the route that was found.');extra=finish();}
+      snap(Object.assign({cur:nxt.to,relaxed:[nxt.e],changed:[nxt.to],lines:lines},extra));
+      if(nxt.to===goal)return {steps:steps};
+    }else{
+      stack.pop();
+      var back=stack.length?stack[stack.length-1]:null;
+      snap({cur:back,lines:['At '+u+': '+sk+(nb.length?'Nothing left to try. ':'It has no outgoing edges. ')+'Pop '+u+(back?' and backtrack to '+back+'.':'. The stack is empty.')]});
+    }
+  }
+  var last=steps[steps.length-1];
+  last.done=true;
+  last.result={found:false,ids:null,cost:null,count:visited.length,kind:goal?'unreachable':'traversal'};
+  last.lines.push(goal?goal+' was never reached from '+start+'.':'Every star reachable from '+start+' has been visited.');
+  return {steps:steps};
+}
+
+function runBest(g,start,goal,astar){
+  var h=astar?hFn(g,goal):function(){return 0;};
+  var gs={},prev={},open={},closed=[],steps=[],ids=g.nodes.map(function(n){return n.id;});
+  function key(id){return gs[id]+h(id);}
+  function cmp(a,b){
+    var d=key(a)-key(b);if(Math.abs(d)>1e-9)return d;
+    var e=h(a)-h(b);if(Math.abs(e)>1e-9)return e;
+    return a<b?-1:a>b?1:0;
+  }
+  function openIds(){return Object.keys(open);}
+  function f1(x){return x.toFixed(1);}
+  function snap(o){
+    var order=openIds().sort(cmp),ch=o.changed||[];
+    var q=order.map(function(id){return {txt:astar?id+'  f='+f1(key(id)):id+'  '+gs[id]};});
+    var rows=ids.map(function(id){
+      var has=gs[id]!==undefined,from=prev[id]?prev[id].from:'–';
+      var cells=astar?[has?gs[id]:'∞',f1(h(id)),has?f1(gs[id]+h(id)):'∞',from]:[has?gs[id]:'∞',from];
+      return {id:id,cells:cells,st:id===o.cur?'cur':closed.indexOf(id)>=0?'done':open[id]?'open':'new',ch:ch.indexOf(id)>=0};
+    });
+    steps.push(base(Object.assign({
+      visited:closed.slice(),open:openIds(),prev:Object.assign({},prev),
+      structs:[
+        {title:astar?'Open list':'Priority queue',sub:astar?'lowest f first':'smallest distance first',items:q},
+        {title:astar?'Closed list':'Settled order',sub:'',items:closed.map(function(id){return {txt:id};})}
+      ],
+      table:{cols:astar?['Star','g','h','f','From']:['Star','Dist','From'],rows:rows}
+    },o)));
+  }
+  gs[start]=0;open[start]=true;
+  snap({cur:null,changed:[start],lines:[astar?'Put '+start+' in the open list with g = 0, h = '+f1(h(start))+', f = '+f1(h(start))+'.':'Set the distance of '+start+' to 0. Every other star starts at ∞.']});
+  while(openIds().length){
+    var u=openIds().sort(cmp)[0];
+    delete open[u];closed.push(u);
+    var lines=[astar?'Take '+u+': f = '+gs[u]+' + '+f1(h(u))+' = '+f1(key(u))+', the lowest in the open list.':'Take '+u+': smallest distance in the queue ('+gs[u]+'). It is now settled.'];
+    if(u===goal){
+      var p=pathFromPrev(prev,start,goal);
+      lines.push(goal+' is the goal, so the route is final. Total cost '+gs[goal]+'.');
+      snap({cur:u,lines:lines,done:true,pathEdges:p.es,result:{found:true,ids:p.ids,cost:gs[goal],count:closed.length,kind:'path'}});
+      return {steps:steps};
+    }
+    var relaxed=[],changed=[];
+    g.adj[u].forEach(function(n){
+      var nd=gs[u]+n.w,old=gs[n.to];
+      relaxed.push(n.e);
+      if(old===undefined||nd<old){
+        var was=closed.indexOf(n.to)>=0;
+        if(was)closed.splice(closed.indexOf(n.to),1);
+        gs[n.to]=nd;prev[n.to]={from:u,e:n.e};open[n.to]=true;changed.push(n.to);
+        lines.push(n.to+': '+gs[u]+' + '+n.w+' = '+nd+' < '+(old===undefined?'∞':old)+', so '+(was?'re-open and ':'')+'update (via '+u+')'+(astar?'; f = '+nd+' + '+f1(h(n.to))+' = '+f1(nd+h(n.to)):'')+'.');
+      }else{
+        lines.push(n.to+': '+gs[u]+' + '+n.w+' = '+nd+', not below '+old+'. Keep.');
+      }
+    });
+    if(!g.adj[u].length)lines.push(u+' has no outgoing edges.');
+    snap({cur:u,lines:lines,relaxed:relaxed,changed:changed});
+  }
+  snap({cur:null,done:true,lines:[goal?'The queue is empty, so '+goal+' cannot be reached from '+start+'.':'The queue is empty. Every reachable star has its shortest distance.'],
+    result:{found:false,ids:null,cost:null,count:closed.length,kind:goal?'unreachable':'traversal'}});
+  return {steps:steps};
+}
+
+function runAlgo(algo,g,start,goal){
+  if(algo==='dfs')return runDFS(g,start,goal);
+  if(algo==='dijkstra')return runBest(g,start,goal,false);
+  if(!goal){
+    return {steps:[base({lines:['A* needs a goal. Pick one with the Goal menu or by clicking a star.'],done:true,structs:[],table:null})]};
+  }
+  return runBest(g,start,goal,true);
+}
+
+/* ---------- chart ---------- */
+var BG=(function(){
+  var s=20261026;
+  function r(){s=(s+0x6D2B79F5)|0;var t=Math.imul(s^(s>>>15),1|s);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296;}
+  var o='';
+  for(var i=0;i<90;i++){o+='<circle cx="'+r1(95+r()*450)+'" cy="'+r1(45+r()*450)+'" r="'+r1(0.6+r()*1.1)+'" opacity="'+r1(0.2+r()*0.35)+'"/>';}
+  return '<g class="bgstars">'+o+'</g>';
+})();
+function axes(){
+  var o='<g class="grid">',v,x,y;
+  for(v=0;v<=100;v+=20){x=r1(PX(v));y=r1(PY(v));o+='<line x1="'+x+'" y1="40" x2="'+x+'" y2="500"/><line x1="90" y1="'+y+'" x2="550" y2="'+y+'"/>';}
+  o+='</g><rect class="frame" x="90" y="40" width="460" height="460"/><g class="ticks">';
+  for(v=0;v<=100;v+=20){x=r1(PX(v));y=r1(PY(v));o+='<text x="'+x+'" y="30" text-anchor="middle">'+v+'</text><text x="80" y="'+r1(y+4)+'" text-anchor="end">'+v+'</text>';}
+  return o+'</g>';
+}
+var AXES=axes();
+
+function renderChart(g,st){
+  var tree={},pathE={},rel={},pathN={};
+  Object.keys(st.prev||{}).forEach(function(k){if(st.prev[k])tree[st.prev[k].e]=1;});
+  (st.pathEdges||[]).forEach(function(e){pathE[e]=1;});
+  (st.relaxed||[]).forEach(function(e){rel[e]=1;});
+  var foundNow=st.done&&st.result&&st.result.found;
+  if(foundNow)st.result.ids.forEach(function(id){pathN[id]=1;});
+  function P(id){return {x:PX(g.byId[id].x),y:PY(g.byId[id].y)};}
+  function arrow(tx,ty,vx,vy){
+    var bx=tx-vx*10,by=ty-vy*10,px=-vy*5,py=vx*5;
+    return '<polygon points="'+r1(tx)+','+r1(ty)+' '+r1(bx+px)+','+r1(by+py)+' '+r1(bx-px)+','+r1(by-py)+'"/>';
+  }
+  var layers={n:'',t:'',r:'',p:''},labels='',hits='';
+  g.edges.forEach(function(e){
+    var A=P(e.a),B=P(e.b),dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy),ux=dx/L,uy=dy/L;
+    var ra=R(g.byId[e.a])+3,rb=R(g.byId[e.b])+3;
+    var x1=A.x+ux*ra,y1=A.y+uy*ra,x2=B.x-ux*rb,y2=B.y-uy*rb,heads='';
+    if(state.directed){
+      if(e.dir===0||e.dir===2){heads+=arrow(x2,y2,ux,uy);x2-=ux*8;y2-=uy*8;}
+      if(e.dir===1||e.dir===2){heads+=arrow(x1,y1,-ux,-uy);x1+=ux*8;y1+=uy*8;}
+    }
+    var cls=pathE[e.i]?'path':rel[e.i]?'rel':tree[e.i]?'tree':'';
+    var g1='<g class="edge '+cls+'"><line x1="'+r1(x1)+'" y1="'+r1(y1)+'" x2="'+r1(x2)+'" y2="'+r1(y2)+'"/>'+heads+'</g>';
+    if(cls==='path')layers.p+=g1;else if(cls==='rel')layers.r+=g1;else if(cls==='tree')layers.t+=g1;else layers.n+=g1;
+    if(state.weights==='distance'){
+      var nx=-uy,ny=ux;
+      if(ny>1e-6||(Math.abs(ny)<=1e-6&&nx<0)){nx=-nx;ny=-ny;}
+      labels+='<text class="wt" x="'+r1((A.x+B.x)/2+nx*11)+'" y="'+r1((A.y+B.y)/2+ny*11)+'">'+e.w+'</text>';
+    }
+    if(state.directed){
+      hits+='<line class="hit" data-edge="'+e.i+'" x1="'+r1(A.x)+'" y1="'+r1(A.y)+'" x2="'+r1(B.x)+'" y2="'+r1(B.y)+'"><title>Edge '+e.a+' to '+e.b+': click to change direction</title></line>';
+    }
+  });
+  var nodes='';
+  g.nodes.forEach(function(n){
+    var p=P(n.id),r=R(n),cls='node';
+    if(st.visited.indexOf(n.id)>=0)cls+=' visited';
+    if(st.open.indexOf(n.id)>=0)cls+=' open';
+    if(st.cur===n.id&&!pathN[n.id])cls+=' cur';
+    if(pathN[n.id])cls+=' onpath';
+    var tag=n.id===state.start&&n.id===state.goal?'START / GOAL':n.id===state.start?'START':n.id===state.goal?'GOAL':'';
+    nodes+='<g class="'+cls+'" data-node="'+n.id+'" tabindex="0" role="button" aria-label="Star '+n.id+', '+n.name+'. Press Enter to set the '+state.pick+'.">'+
+      '<circle class="glow" cx="'+r1(p.x)+'" cy="'+r1(p.y)+'" r="'+r1(r+8)+'"/>'+
+      '<circle class="body" cx="'+r1(p.x)+'" cy="'+r1(p.y)+'" r="'+r+'"/>'+
+      '<text class="lt" x="'+r1(p.x)+'" y="'+r1(p.y+1)+'">'+n.id+'</text>'+
+      (tag?'<text class="tag" x="'+r1(p.x)+'" y="'+r1(p.y-r-7)+'">'+tag+'</text>':'')+
+      (state.labels==='names'?'<text class="nm" x="'+r1(p.x)+'" y="'+r1(p.y+r+14)+'">'+n.name+'</text>':'')+
+      '</g>';
+  });
+  $('chart').setAttribute('class',state.directed?'directed':'');
+  $('chart').innerHTML=BG+AXES+layers.n+layers.t+layers.r+layers.p+hits+labels+nodes;
+}
+
+/* ---------- panel ---------- */
+function chips(items){
+  if(!items.length)return '<span class="empty">empty</span>';
+  return items.map(function(i){return '<span class="chip">'+i.txt.replace(/  /g,' · ')+'</span>';}).join('');
+}
+function renderPanel(g,run){
+  var steps=run.steps,st=steps[state.step],N=steps.length;
+  $('stepNo').textContent='Step '+(state.step+1)+' of '+N;
+  $('scrub').max=String(N-1);$('scrub').value=String(state.step);
+  $('bBack').disabled=state.step===0;
+  $('bNext').disabled=state.step>=N-1;
+  $('bPlay').textContent=state.playing?'Pause':(state.step>=N-1?'Replay':'Play');
+  $('note').innerHTML=st.lines.map(function(l){return '<p>'+l+'</p>';}).join('');
+  $('structs').innerHTML=st.structs.map(function(s){
+    return '<div class="struct"><h3>'+s.title+(s.sub?'<small>'+s.sub+'</small>':'')+'</h3><div class="chips">'+chips(s.items)+'</div></div>';
+  }).join('');
+  if(st.table){
+    var t='<table><thead><tr>'+st.table.cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody>';
+    st.table.rows.forEach(function(r){
+      t+='<tr class="'+(r.st==='cur'?'cur':r.st==='done'?'done':'')+'"><th>'+r.id+'</th>'+r.cells.map(function(c,i){return '<td'+(r.ch&&i===0?' class="ch"':'')+'>'+c+'</td>';}).join('')+'</tr>';
+    });
+    $('trace').innerHTML=t+'</tbody></table>';
+  }else $('trace').innerHTML='';
+  var res=st.done&&st.result?st.result:null,rh='';
+  if(res){
+    if(res.found){
+      rh='<div class="result"><b>Route found:</b> '+res.ids.join(' → ')+'<br><b>Cost:</b> '+res.cost+' &nbsp; <b>'+(state.algo==='dfs'?'Stars visited:':state.algo==='astar'?'Stars expanded:':'Stars settled:')+'</b> '+res.count+
+        (state.algo==='dfs'?'<br><span class="dim">DFS stops at the first route it meets, so this is not always the cheapest.</span>':'')+'</div>';
+    }else if(res.kind==='unreachable'){
+      rh='<div class="result"><b>No route.</b> '+state.goal+' cannot be reached from '+state.start+' with these edges. '+res.count+(res.count===1?' star was':' stars were')+' checked before the search ran out.</div>';
+    }else if(res.kind==='traversal'){
+      rh='<div class="result"><b>Done.</b> '+res.count+' stars reached from '+state.start+'.</div>';
+    }
+  }
+  $('result').innerHTML=rh;
+}
+
+function pickOptions(g){
+  return g.nodes.map(function(n){return '<option value="'+n.id+'">'+n.id+' · '+n.name+'</option>';}).join('');
+}
+
+function renderCompare(g){
+  var goal=state.goal;
+  if(!goal){$('cmpSub').textContent='Pick a goal star to compare the three algorithms.';$('cmpOut').innerHTML='';return;}
+  $('cmpSub').textContent='Route from '+state.start+' to '+goal+' with the current edges, weights and heuristic.';
+  var algos=[['dfs','DFS','visited'],['dijkstra','Dijkstra','settled'],['astar','A*','expanded']],out=[],min=Infinity;
+  algos.forEach(function(a){
+    var steps=runAlgo(a[0],g,state.start,goal).steps,res=steps[steps.length-1].result;
+    out.push({k:a[0],n:a[1],verb:a[2],res:res});
+    if(res&&res.found&&res.cost<min)min=res.cost;
+  });
+  var t='<table class="cmp"><thead><tr><th>Algorithm</th><th>Route</th><th>Cost</th><th>Stars checked</th></tr></thead><tbody>';
+  out.forEach(function(o){
+    var r=o.res;
+    t+='<tr class="'+(state.algo===o.k?'cur':'')+'"><th>'+o.n+'</th>';
+    if(r&&r.found)t+='<td>'+r.ids.join(' → ')+'</td><td>'+r.cost+(r.cost===min?'<span class="best">cheapest</span>':'')+'</td><td>'+r.count+' '+o.verb+'</td>';
+    else t+='<td colspan="3" class="dim">'+(o.k==='astar'&&!goal?'Needs a goal':'No route')+'</td>';
+    t+='</tr>';
+  });
+  $('cmpOut').innerHTML=t+'</tbody></table>';
+}
+
+function renderKey(g){
+  var t='<table><thead><tr><th>Node</th><th>Star</th><th>Magnitude</th><th>x, y</th></tr></thead><tbody>';
+  g.nodes.forEach(function(n){t+='<tr><th>'+n.id+'</th><td>'+n.name+'</td><td>'+n.m.toFixed(1)+'</td><td>'+n.x+', '+n.y+'</td></tr>';});
+  $('keyOut').innerHTML=t+'</tbody></table>';
+}
+
+function weighted(){return state.weights==='distance';}
+function listText(g){
+  return g.nodes.map(function(n){
+    var nb=g.adj[n.id].map(function(x){return weighted()?x.to+'('+x.w+')':x.to;});
+    return n.id+': '+(nb.length?nb.join(', '):'none');
+  }).join('\n');
+}
+function matrixRows(g){
+  return g.nodes.map(function(u){
+    return g.nodes.map(function(v){
+      var hit=null;
+      g.adj[u.id].forEach(function(x){if(x.to===v.id)hit=x;});
+      return hit?(weighted()?String(hit.w):'1'):(weighted()?'–':'0');
+    });
+  });
+}
+function pyText(g){
+  var d=state.directed?'directed':'undirected';
+  var o='# '+g.s.name+', '+d+(weighted()?', weights are distances rounded up to whole units':', unweighted')+'\ngraph = {\n';
+  o+=g.nodes.map(function(n){
+    var nb=g.adj[n.id];
+    var inner=weighted()?'{'+nb.map(function(x){return "'"+x.to+"': "+x.w;}).join(', ')+'}':'['+nb.map(function(x){return "'"+x.to+"'";}).join(', ')+']';
+    return "    '"+n.id+"': "+inner;
+  }).join(',\n');
+  o+='\n}\n\npos = {  # chart coordinates, used for the A* heuristic\n';
+  o+=g.nodes.map(function(n){return "    '"+n.id+"': ("+n.x+', '+n.y+')';}).join(',\n');
+  return o+'\n}\n';
+}
+function dataText(g){
+  if(state.dataTab==='list')return listText(g);
+  if(state.dataTab==='python')return pyText(g);
+  var rows=matrixRows(g);
+  return ['\t'+g.nodes.map(function(n){return n.id;}).join('\t')].concat(rows.map(function(r,i){return g.nodes[i].id+'\t'+r.join('\t');})).join('\n');
+}
+function renderData(g){
+  var kind=state.directed?'Directed':'Undirected';
+  $('dataSub').textContent=kind+', '+(weighted()?'weighted':'unweighted')+'. '+(state.directed?'Rows are the star an edge leaves, columns are the star it enters.':'Every edge appears in both directions.');
+  if(state.dataTab==='matrix'){
+    var rows=matrixRows(g),t='<table class="mx"><thead><tr><th></th>'+g.nodes.map(function(n){return '<th>'+n.id+'</th>';}).join('')+'</tr></thead><tbody>';
+    rows.forEach(function(r,i){t+='<tr><th>'+g.nodes[i].id+'</th>'+r.map(function(c){return '<td'+(c==='–'||c==='0'?' class="dim"':'')+'>'+c+'</td>';}).join('')+'</tr>';});
+    $('dataOut').innerHTML=t+'</tbody></table>';
+  }else{
+    var pre=document.createElement('pre');pre.textContent=dataText(g);
+    $('dataOut').innerHTML='';$('dataOut').appendChild(pre);
+  }
+}
+
+function setSeg(id,val){
+  var bs=$(id).querySelectorAll('button');
+  for(var i=0;i<bs.length;i++)bs[i].setAttribute('aria-pressed',bs[i].getAttribute('data-v')===val?'true':'false');
+}
+
+function refresh(){
+  var g=buildGraph();G=g;
+  RUN=runAlgo(state.algo,g,state.start,state.goal);
+  if(state.step>RUN.steps.length-1)state.step=RUN.steps.length-1;
+  var s=g.s,n=g.nodes.length,m=g.edges.length,comp=components(s),c=m-n+comp;
+  $('skyName').textContent=s.name;$('skyAlias').textContent=s.alias;
+  $('skyMeta').textContent=n+' stars · '+m+' lines · '+(comp>1?comp+' separate pieces · ':'')+(c===0?(comp>1?'no cycles':'no cycles (a tree)'):c+(c===1?' cycle':' cycles'));
+  setSeg('segSky',state.sky);setSeg('segDir',state.directed?'directed':'undirected');setSeg('segW',state.weights);
+  setSeg('segLab',state.labels);setSeg('segAlgo',state.algo);setSeg('segHeur',state.heur);setSeg('segPick',state.pick);setSeg('segData',state.dataTab);
+  $('revAll').hidden=!state.directed;$('resetDirs').hidden=!state.directed;
+  $('shuffle').hidden=state.weights==='unit';$('resetW').hidden=state.weights==='unit';
+  $('blurb').textContent=BLURB[state.algo];
+  $('heurRow').hidden=state.algo!=='astar';
+  var opts=pickOptions(g);
+  if($('selStart').getAttribute('data-sky')!==state.sky){
+    $('selStart').innerHTML=opts;$('selGoal').innerHTML='<option value="">None (explore all)</option>'+opts;
+    $('selStart').setAttribute('data-sky',state.sky);
+  }
+  $('selStart').value=state.start;$('selGoal').value=state.goal;
+  if(state.algo==='astar'&&state.goal){
+    var a=admiss(g,state.goal),msg,cls;
+    if(!a.ok){msg='Not admissible here: at '+a.worst.id+' it guesses '+a.worst.h.toFixed(1)+' but the true cost is '+a.worst.t+'. A* may return a route that is not the cheapest.';cls='warn bad';}
+    else if(state.heur==='zero'){msg='With h = 0 every star scores f = g, so A* behaves exactly like Dijkstra.';cls='warn ok';}
+    else if(state.heur==='manhattan'){msg='It does not overestimate on this graph, but it can on others, so it is not safe in general.';cls='warn ok';}
+    else{msg='Admissible: straight-line distance never overestimates, so A* finds the cheapest route.';cls='warn ok';}
+    $('admiss').className=cls;$('admiss').textContent=msg;
+  }else{$('admiss').textContent='';}
+  $('hint').textContent=(state.directed?'Click a line to cycle its direction: forward, reverse, both ways. ':'')+'Click a star to set the '+state.pick+'; the next click sets the '+(state.pick==='start'?'goal':'start')+'.';
+  renderChart(g,RUN.steps[state.step]);
+  renderPanel(g,RUN);
+  renderCompare(g);renderKey(g);renderData(g);
+}
+
+function stop(){state.playing=false;if(timer){clearInterval(timer);timer=null;}}
+function changed(){stop();state.step=0;refresh();}
+function play(){
+  if(state.playing){stop();refresh();return;}
+  if(state.step>=RUN.steps.length-1)state.step=0;
+  state.playing=true;
+  timer=setInterval(function(){
+    if(state.step>=RUN.steps.length-1){stop();refresh();return;}
+    state.step++;refresh();
+  },parseInt($('selSpeed').value,10));
+  refresh();
+}
+
+/* ---------- wiring ---------- */
+$('segSky').innerHTML=Object.keys(SKY).map(function(k){return '<button data-v="'+k+'">'+SKY[k].name+'</button>';}).join('');
+function seg(id,fn){$(id).addEventListener('click',function(ev){var b=ev.target.closest('button[data-v]');if(!b)return;fn(b.getAttribute('data-v'));});}
+seg('segSky',function(v){stop();initSky(v);$('selStart').setAttribute('data-sky','');refresh();});
+seg('segDir',function(v){state.directed=v==='directed';changed();});
+seg('segW',function(v){state.weights=v;changed();});
+seg('segLab',function(v){state.labels=v;refresh();});
+seg('segAlgo',function(v){state.algo=v;changed();});
+seg('segHeur',function(v){state.heur=v;changed();});
+seg('segPick',function(v){state.pick=v;refresh();});
+seg('segData',function(v){state.dataTab=v;refresh();});
+$('revAll').addEventListener('click',function(){var d=state.dirs[state.sky];state.dirs[state.sky]=d.map(function(x){return x===0?1:x===1?0:2;});changed();});
+$('resetDirs').addEventListener('click',function(){state.dirs[state.sky]=SKY[state.sky].edges.map(function(){return 0;});changed();});
+$('shuffle').addEventListener('click',function(){state.offs[state.sky]=SKY[state.sky].edges.map(function(){return Math.floor(Math.random()*5);});changed();});
+$('resetW').addEventListener('click',function(){state.offs[state.sky]=SKY[state.sky].edges.map(function(){return 0;});changed();});
+$('selStart').addEventListener('change',function(){state.start=this.value;changed();});
+$('selGoal').addEventListener('change',function(){state.goal=this.value;changed();});
+$('bReset').addEventListener('click',function(){stop();state.step=0;refresh();});
+$('bBack').addEventListener('click',function(){stop();if(state.step>0)state.step--;refresh();});
+$('bNext').addEventListener('click',function(){stop();if(state.step<RUN.steps.length-1)state.step++;refresh();});
+$('bPlay').addEventListener('click',play);
+$('scrub').addEventListener('input',function(){stop();state.step=parseInt(this.value,10);refresh();});
+$('selSpeed').addEventListener('change',function(){if(state.playing){stop();play();}});
+
+function chartPick(id){
+  state[state.pick]=id;
+  state.pick=state.pick==='start'?'goal':'start';
+  changed();
+}
+$('chart').addEventListener('click',function(ev){
+  var nd=ev.target.closest('[data-node]');
+  if(nd){chartPick(nd.getAttribute('data-node'));return;}
+  var ed=ev.target.closest('[data-edge]');
+  if(ed&&state.directed){var i=parseInt(ed.getAttribute('data-edge'),10),d=state.dirs[state.sky];d[i]=(d[i]+1)%3;changed();}
+});
+$('chart').addEventListener('keydown',function(ev){
+  if(ev.key!=='Enter'&&ev.key!==' ')return;
+  var nd=ev.target.closest('[data-node]');
+  if(nd){ev.preventDefault();chartPick(nd.getAttribute('data-node'));}
+});
+document.addEventListener('keydown',function(ev){
+  var t=ev.target&&ev.target.tagName;
+  if(t==='INPUT'||t==='SELECT'||t==='TEXTAREA')return;
+  if(ev.key==='ArrowRight'&&state.step<RUN.steps.length-1){stop();state.step++;refresh();}
+  if(ev.key==='ArrowLeft'&&state.step>0){stop();state.step--;refresh();}
+});
+function selectOut(){var r=document.createRange();r.selectNodeContents($('dataOut'));var s=window.getSelection();s.removeAllRanges();s.addRange(r);}
+$('copyBtn').addEventListener('click',function(){
+  var b=this,txt=dataText(G);
+  function done(ok){b.textContent=ok?'Copied':'Select and copy';setTimeout(function(){b.textContent='Copy';},1800);}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){done(true);},function(){selectOut();done(false);});
+  }else{selectOut();done(false);}
+});
+
+initSky('orion');
+refresh();
+})();
+</script>
+
+</body></html>
