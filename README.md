@@ -3,8 +3,6 @@ An interactive teaching tool that turns star constellations into graphs, interac
 
 Stars are nodes and the lines drawn between them are edges. Every constellation can be shown as an **undirected** or a **directed** graph, with **weighted** or **unweighted** edges.
 
-It is a single self-contained HTML file. There is nothing to install and no build step.
-
 **Live site:** https://rwoodrow.github.io/Constellation-Graphs/
 
 ## Features
