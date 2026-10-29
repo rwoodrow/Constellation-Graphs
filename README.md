@@ -45,7 +45,7 @@ Stars are nodes and the lines drawn between them are edges. Every constellation 
 
 ### Graph model
 
-- Each constellation is a list of stars with `x` and `y` positions on a 0 to 100 grid, plus a list of lines between them.
+- Each constellation is a list of stars with `x` and `y` positions on a 0 to 100 grid, plus a list of lines between them. (See note above regarding accuracy).
 - **Edge weight** is the straight-line distance between two stars divided by 5 and rounded up to a whole number, so weights are always positive integers. Shuffling adds a small random amount to each weight.
 - **Directed mode** gives each edge a direction (forward, reverse or both). Undirected mode treats every edge as two-way.
 
